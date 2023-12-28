@@ -1,0 +1,110 @@
+---
+title: "Final Project-450"
+author: "Thu Tran"
+date: "2022-11-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library (tidyverse)
+library(maps)
+library(mapproj)
+library (tidygeocoder)
+library (leaflet)
+library (ggimage)
+```
+
+# Load data
+```{r}
+Flim.SF<- read_csv("SF_Film_location.csv")
+
+# There is a duplicate in "A view to a kill" at " City Hall", in 1985, line 648 remove the duplicate
+Flim_SF <- Flim.SF[!duplicated(Flim.SF), ]
+glimpse(Flim_SF)
+```
+# Number of movies filmming in SF from 1924 to 2021
+```{r}
+# Create a table with the number of movies filming by years
+movie<-Flim_SF %>% select ('Title', 'Release Year')
+movie <- movie[!duplicated(movie), ]      # clean up duplicated
+movie<- movie %>% 
+  group_by(`Release Year`) %>% 
+  summarise(
+    count=n()
+  )
+# Create a plot
+ggplot(movie, aes(`Release Year`,count))+
+  geom_col(fill = "red")+
+  geom_smooth(se= FALSE)+
+  geom_label(
+    label= max(movie$count), 
+    y= max(movie$count),
+    x= 2015 )+
+  xlab("Release Year")+
+  ylab("Number of movie")+
+  ggtitle("MOVIES FLIMING IN SAN FRANCISCO FROM 1924 TO 2021")
+
+```
+
+# The top 10 favorite places for filming
+```{r}
+# Create a table to sort 10 favorite places
+locations_10<-Flim_SF %>% 
+  filter(!is.na(Locations)) %>%  # deselect NA value
+  count(Locations,sort=TRUE) %>% 
+  mutate(Add=paste(Locations," SF, CA")) # add more detail for the address
+locations_10<-locations_10[1:10,] # sort the top 10 rows
+locations_10$Locations<- gsub(r"{\s*\([^\)]+\)}","",as.character(locations_10$Locations)) # Clean up the locations for label use on map
+locations_10$Add<-replace(locations_10$Add, 8, '666 Filbert St, San Francisco, CA 94133') # Modify the address of St. Peter & Paul's Church
+locations_10
+```
+# Get the 10 favorite place coordinate by geocoder
+```{r}
+locations10_coord<-locations_10 %>% 
+  geocode(address= Add, method = "osm", verbose= TRUE)
+locations10_coord
+```
+
+# Plot map of 10 favorite place with leaflet
+```{r}
+leaflet(locations10_coord) %>% addTiles() %>% 
+  addMarkers(~long,~lat,label=htmlEscape(paste(locations10_coord$Locations," : ", locations10_coord$n,"times fliming.")))
+```
+
+# Top 10 actors fliming in SF
+```{r}
+# Create a data of top 10 actors filming in SF
+actors_10<-Flim_SF %>% 
+  select(Title, `Actor 1`:`Actor 3`) %>% 
+  distinct() %>% # Remove duplicate rows (some are duplicate because of a note in 'Fun Facts')
+  pivot_longer(c(`Actor 1`:`Actor 3`), names_to="Role", values_to = "Actors") %>% 
+  filter(!is.na(Actors)) %>% 
+  count(Actors,sort=TRUE) 
+actors_10<-actors_10[1:10,]
+actors_10
+```
+# Plot a chart of top 10 actors
+```{r}
+# Create a tibble contain the image of the top 10 actors
+actors_img<-tibble(img=c("Murray.PNG","Hugh.JPG","Ethan.JPG","Jonathan.JPG",
+       "Gretchen.JPG","Frankie.JPG","Robin.JPG",
+       "Clint.JPG","Keanu.JPG","Eddie.JPG"),
+      Actors= c("Murray Bartlett","Hugh Laurie","Ethan Suplee",	"Jonathan Groff",
+                "Gretchen Mol","Frankie Alvarez","Robin Williams",
+                "Clint Eastwood","Keanu Reeves","Eddie Murphy"))
+
+# Use inner_join to combine with the actors_10
+actors_top10<-actors_10 %>% inner_join(actors_img)
+
+# Plot the chart with the image of each actors
+ggplot(actors_top10)+
+  geom_col(aes(x=n,y=fct_reorder(Actors,n) ))+
+  geom_image(aes(x=n+0.6,y=Actors,image=img), size =0.08)+
+  scale_x_continuous(breaks= c(0,2,4,6,8,10,12))+
+  xlab("Number of movie acted in SF")+
+  ylab("Name of actors")+
+  ggtitle("TOP 10 ACTORS CHOOSE SAN FRANCISCO FOR FILMING")+
+  theme_classic() 
+```
+
